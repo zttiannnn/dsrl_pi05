@@ -29,7 +29,7 @@ def obs_to_img(obs, variant):
     '''
     if variant.env == 'libero':
         curr_image = obs["agentview_image"][::-1, ::-1]
-    elif variant.env == 'aloha_cube':
+    elif variant.env in ('aloha_cube', 'aloha_cube_pi05'):
         curr_image = obs["pixels"]["top"]
     else:
         raise NotImplementedError()
@@ -60,7 +60,7 @@ def obs_to_pi_zero_input(obs, variant):
                         ),
                         "prompt": str(variant.task_description),
                     }
-    elif variant.env == 'aloha_cube':
+    elif variant.env in ('aloha_cube', 'aloha_cube_pi05'):
         img = np.ascontiguousarray(obs["pixels"]["top"])
         img = image_tools.convert_to_uint8(
             image_tools.resize_with_pad(img, 224, 224)
@@ -82,7 +82,7 @@ def obs_to_qpos(obs, variant):
                 obs["robot0_gripper_qpos"],
             )
         )
-    elif variant.env == 'aloha_cube':
+    elif variant.env in ('aloha_cube', 'aloha_cube_pi05'):
         qpos = obs["agent_pos"]
     else:
         raise NotImplementedError()
@@ -194,6 +194,7 @@ def collect_traj(variant, agent, env, i, agent_dp=None):
     query_frequency = variant.query_freq
     max_timesteps = variant.max_timesteps
     env_max_reward = variant.env_max_reward
+    visualize_rollout = bool(getattr(variant, 'visualize_env', False)) and 'aloha' in variant.env
 
     agent._rng, rng = jax.random.split(agent._rng)
     
@@ -251,6 +252,8 @@ def collect_traj(variant, agent, env, i, agent_dp=None):
         elif 'aloha' in variant.env:
             obs, reward, terminated, truncated, _ = env.step(action_t)
             done = terminated or truncated
+        if visualize_rollout and hasattr(env, 'render'):
+            env.render()
             
         rewards.append(reward)
         image_list.append(curr_image)

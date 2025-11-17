@@ -91,6 +91,7 @@ class DummyEnv(gym.ObservationWrapper):
 
 
 def main(variant):
+    variant.visualize_env = bool(getattr(variant, 'visualize_env', 0))
     devices = jax.local_devices()
     num_devices = len(devices)
     assert variant.batch_size % num_devices == 0
@@ -116,7 +117,8 @@ def main(variant):
     else:
         expname = create_exp_name(variant.prefix, seed=variant.seed)
    
-    outputdir = os.path.join(os.environ['EXP'], expname)
+    # outputdir = os.path.join(os.environ['EXP'], expname)
+    outputdir = os.path.abspath(os.path.join(os.environ['EXP'], expname))
     variant.outputdir = outputdir
     if not os.path.exists(outputdir):
         os.makedirs(outputdir)
@@ -133,6 +135,9 @@ def main(variant):
         variant.task_description = task_description
         variant.env_max_reward = 1
         variant.max_timesteps = 400
+        if variant.visualize_env:
+            print('LIBERO env does not expose a MuJoCo viewer; disabling visualization flag.')
+            variant.visualize_env = False
     elif variant.env in ('aloha_cube', 'aloha_cube_pi05'):
         from gymnasium.envs.registration import register
         register(
@@ -142,10 +147,25 @@ def main(variant):
             nondeterministic=True,
             kwargs={"obs_type": "pixels", "task": "transfer_cube"},
         )
-        env = gym.make("gym_aloha/AlohaTransferCube-v0", obs_type="pixels_agent_pos", render_mode="rgb_array")
-        eval_env = copy.deepcopy(env)
+        render_mode = "human" if variant.visualize_env else "rgb_array"
+        env = gym.make(
+            "gym_aloha/AlohaTransferCube-v0",
+            obs_type="pixels_agent_pos",
+            render_mode=render_mode,
+        )
+        eval_env = gym.make(
+            "gym_aloha/AlohaTransferCube-v0",
+            obs_type="pixels_agent_pos",
+            render_mode="rgb_array",
+        )
+        if variant.visualize_env:
+            print('MuJoCo viewer enabled; make sure MUJOCO_GL=glfw and DISPLAY is set.')
         variant.env_max_reward = 4
         variant.max_timesteps = 400
+    else:
+        if variant.visualize_env:
+            print('Visualization is only implemented for Aloha environments; disabling flag.')
+            variant.visualize_env = False
         
 
     group_name = variant.prefix + '_' + variant.launch_group_id

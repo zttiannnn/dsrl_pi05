@@ -25,6 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--multi_grad_step', default=1, help='Number of graident steps to take per environment step, aka UTD', type=int)
     parser.add_argument('--resize_image', default=-1, help='the size of image if need resizing', type=int)
     parser.add_argument('--query_freq', default=-1, help='query frequency', type=int)
+    parser.add_argument('--visualize_env', default=0, help='whether to show the MuJoCo viewer during rollouts (Aloha env only)', type=int)
     
     train_args_dict = dict(
         actor_lr=1e-4,
