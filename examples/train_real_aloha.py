@@ -91,12 +91,27 @@ def main(variant):
         group_name=group_name,
     )
 
-    agent_dp = _websocket_client_policy.WebsocketClientPolicy(
-        host=os.environ["remote_host"],
-        port=os.environ["remote_port"],
-    )
-    metadata = agent_dp.get_server_metadata()
-    logging.info("Server metadata: %s", metadata)
+    # Policy connection: prefer a local inference process (inproc) if
+    # environment variable `LOCAL_POLICY_CHECKPOINT` is set. This allows
+    # running the model in a child process (same machine) instead of a
+    # websocket server.
+    agent_dp = None
+    if os.environ.get("LOCAL_POLICY_CHECKPOINT"):
+        from examples.local_policy_client import LocalPolicyClient
+
+        checkpoint = os.environ["LOCAL_POLICY_CHECKPOINT"]
+        cfg_name = os.environ.get("LOCAL_POLICY_CONFIG", "pi05_aloha")
+        default_prompt = os.environ.get("LOCAL_POLICY_PROMPT", None)
+        agent_dp = LocalPolicyClient(checkpoint, config_name=cfg_name, default_prompt=default_prompt)
+        metadata = agent_dp.get_server_metadata()
+        logging.info("Using LocalPolicyClient, metadata: %s", metadata)
+    else:
+        agent_dp = _websocket_client_policy.WebsocketClientPolicy(
+            host=os.environ.get("remote_host", "0.0.0.0"),
+            port=os.environ.get("remote_port", None),
+        )
+        metadata = agent_dp.get_server_metadata()
+        logging.info("Using WebsocketClientPolicy, server metadata: %s", metadata)
 
     logging.info("initializing Aloha environment...")
     env = AlohaRobotEnv(render_size=variant.resize_image, reset_position=metadata.get("reset_pose"))
