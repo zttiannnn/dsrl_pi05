@@ -20,52 +20,60 @@ import time
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-import msgpack
 import numpy as np
 
 try:
     from openpi.policies import policy_config as _policy_config
     from openpi.training import config as _config
-except Exception:
-    # best-effort import; training code should run in environment where openpi is available
+except Exception:  # pragma: no cover - training runtime must provide openpi
     _policy_config = None
     _config = None
 
+# The pi05 AgileX follower config matches the inference script the user relies on.
+_DEFAULT_CONFIG = "pi05_agileX"
 
-# Worker: runs inside the child process
+
+# ============ 子进程 Worker：加载策略并处理 RPC 请求 ============
+# 职责：
+#   1. 一次性加载 pi05_agileX 策略到 CUDA（避免主进程显存占用）
+#   2. 循环接收 (req_id, method, payload) 并返回 (req_id, response)
+#   3. 支持 infer、get_prefix_rep、get_server_metadata 三种方法
 def _policy_worker(in_q: mp.Queue, out_q: mp.Queue, config_name: str, checkpoint_dir: str, default_prompt: Optional[str]):
-    # load model once in child
+    # 加载策略配置和权重（仅在子进程初始化时执行一次）
     try:
-        cfg = _config.get_config(config_name) if _config is not None else None
+        if _config is None or _policy_config is None:
+            raise RuntimeError("openpi package is not available on PYTHONPATH")
+        cfg = _config.get_config(config_name)  # 默认 pi05_agileX
         policy = _policy_config.create_trained_policy(cfg, checkpoint_dir, default_prompt=default_prompt)
     except Exception as e:
         logging.exception("Failed to load policy in worker: %s", e)
         out_q.put((None, {"error": str(e)}))
         return
 
+    # RPC 事件循环：接收请求 → 调用策略 → 返回结果
     while True:
         req = in_q.get()
-        if req is None:
+        if req is None:  # 收到 None 表示训练结束，退出子进程
             break
         req_id, method, payload = req
         try:
             if method == "infer":
-                # payload expected to be dict observation; some callers pass noise in payload['noise']
+                # 推理请求：返回动作序列 (通常为 [chunk_size, action_dim])
+                # payload 可能包含 obs 和 noise（SAC 探索噪声）
                 obs = payload.get("obs", payload)
-                # forward noise if policy.accepts it
                 if "noise" in payload:
-                    res = policy.infer(obs, noise=payload["noise"])
+                    res = policy.infer(obs, noise=payload["noise"])  # 带噪声扩散采样
                 else:
-                    res = policy.infer(obs)
+                    res = policy.infer(obs)  # 纯策略输出
                 out_q.put((req_id, {"result": res}))
             elif method == "get_prefix_rep":
+                # 获取视觉特征：用于构造 RL agent 的 state（joint + image embedding）
                 obs = payload
-                # some policies implement get_prefix_rep
                 if hasattr(policy, "get_prefix_rep"):
-                    res = policy.get_prefix_rep(obs)
+                    res = policy.get_prefix_rep(obs)  # 返回 [batch, seq, feat_dim]
                     out_q.put((req_id, {"result": res}))
                 else:
-                    # fallback: call infer and try to extract features if present
+                    # 兼容旧策略：直接调用 infer 尝试提取特征
                     res = policy.infer(obs)
                     out_q.put((req_id, {"result": res}))
             elif method == "get_server_metadata":
@@ -88,7 +96,7 @@ class LocalPolicyClient:
       - close()
     """
 
-    def __init__(self, checkpoint_dir: str, config_name: str = "pi05_aloha", default_prompt: Optional[str] = None, timeout: float = 10.0):
+    def __init__(self, checkpoint_dir: str, config_name: str = _DEFAULT_CONFIG, default_prompt: Optional[str] = None, timeout: float = 10.0):
         self._ctx = mp.get_context("spawn")
         self._in_q: mp.Queue = self._ctx.Queue(maxsize=8)
         self._out_q: mp.Queue = self._ctx.Queue(maxsize=8)

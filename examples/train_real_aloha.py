@@ -18,9 +18,10 @@ from jaxrl2.data import ReplayBuffer
 from jaxrl2.utils.general_utils import add_batch_dim
 from jaxrl2.utils.wandb_logger import WandBLogger, create_exp_name
 
+from examples.agilex_env_wrapper import AgileXFollowerEnv
 from examples.aloha_env_wrapper import AlohaRobotEnv
+from examples.local_policy_client import LocalPolicyClient
 from examples.train_utils_real_aloha import trajwise_alternating_training_loop
-from openpi_client import websocket_client_policy as _websocket_client_policy
 
 home_dir = os.environ["HOME"]
 compilation_cache.initialize_cache(os.path.join(home_dir, "jax_compilation_cache"))
@@ -91,47 +92,59 @@ def main(variant):
         group_name=group_name,
     )
 
-    # Policy connection: prefer a local inference process (inproc) if
-    # environment variable `LOCAL_POLICY_CHECKPOINT` is set. This allows
-    # running the model in a child process (same machine) instead of a
-    # websocket server.
-    agent_dp = None
-    if os.environ.get("LOCAL_POLICY_CHECKPOINT"):
-        from examples.local_policy_client import LocalPolicyClient
+    # ========== 1. 初始化本地策略客户端（子进程推理） ==========
+    # LocalPolicyClient 在独立进程加载 pi05_agileX 策略，避免主进程 CUDA 内存冲突
+    # 提供两个核心接口：
+    #   - infer(obs, noise) → 返回动作序列用于环境交互
+    #   - get_prefix_rep(obs) → 返回视觉特征用于 RL state 拼接
+    checkpoint = getattr(variant, "policy_checkpoint", "")
+    if not checkpoint:
+        raise ValueError("--policy_checkpoint must point to a trained pi05_agileX checkpoint")
+    cfg_name = getattr(variant, "policy_config", "pi05_agileX")
+    default_prompt = variant.instruction  # 任务描述，传给策略作为条件输入
+    agent_dp = LocalPolicyClient(checkpoint, config_name=cfg_name, default_prompt=default_prompt)
+    metadata = agent_dp.get_server_metadata() or {}  # 可能包含 reset_pose 等配置
+    logging.info(
+        "Using LocalPolicyClient (config=%s, checkpoint=%s), metadata: %s",
+        cfg_name,
+        checkpoint,
+        metadata,
+    )
 
-        checkpoint = os.environ["LOCAL_POLICY_CHECKPOINT"]
-        cfg_name = os.environ.get("LOCAL_POLICY_CONFIG", "pi05_aloha")
-        default_prompt = os.environ.get("LOCAL_POLICY_PROMPT", None)
-        agent_dp = LocalPolicyClient(checkpoint, config_name=cfg_name, default_prompt=default_prompt)
-        metadata = agent_dp.get_server_metadata()
-        logging.info("Using LocalPolicyClient, metadata: %s", metadata)
-    else:
-        agent_dp = _websocket_client_policy.WebsocketClientPolicy(
-            host=os.environ.get("remote_host", "0.0.0.0"),
-            port=os.environ.get("remote_port", None),
+    # ========== 2. 初始化硬件环境（AgileX 或 Aloha） ==========
+    # 根据 --robot_type 选择对应的 wrapper：
+    #   - AgileX: 连接松灵机械臂 + YAML 配置的摄像头（OpenCV/Orbbec）
+    #   - Aloha:  连接双臂 Aloha 系统（通过 openpi05 环境）
+    # 环境提供 reset()、get_observation()、step(action) 接口供训练循环调用
+    robot_type = getattr(variant, "robot_type", variant.env).lower()
+    logging.info("Selected robot type: %s", robot_type)
+    if robot_type == "agilex":
+        if not variant.agilex_port:
+            raise ValueError("--agilex_port must be provided when robot_type=agilex")
+        env = AgileXFollowerEnv(
+            port=variant.agilex_port,                # 串口设备路径，如 /dev/ttyACM0
+            robot_id=getattr(variant, "agilex_robot_id", "left"),  # 机械臂 ID
+            camera_config=getattr(variant, "agilex_camera_dict", None),
+            camera_config_path=(variant.agilex_camera_yaml or None),  # 摄像头 YAML 配置
+            max_relative_target=getattr(variant, "agilex_max_relative_target", None),
+            use_degrees=bool(getattr(variant, "agilex_use_degrees", False)),
+            prompt=variant.instruction,  # 任务提示词（记录用，实际未在 env 中使用）
         )
-        metadata = agent_dp.get_server_metadata()
-        logging.info("Using WebsocketClientPolicy, server metadata: %s", metadata)
-
-    logging.info("initializing Aloha environment...")
-    env = AlohaRobotEnv(render_size=variant.resize_image, reset_position=metadata.get("reset_pose"))
-    eval_env = env
-    logging.info("created the aloha env!")
+        eval_env = env
+        logging.info("Created AgileX follower environment")
+    else:
+        logging.info("initializing Aloha environment...")
+        env = AlohaRobotEnv(render_size=variant.resize_image, reset_position=metadata.get("reset_pose"))
+        eval_env = env
+        logging.info("created the aloha env!")
 
     robot_config = dict(
-        camera_map=dict(
-            high="cam_high",#########################################3
-            low="cam_low",
-            left_wrist="cam_left_wrist",
-            right_wrist="cam_right_wrist",
-        ),########################################改成松灵的配置
-        image_order=list(variant.image_order),
-        external_camera=variant.external_camera,
-        wrist_camera=variant.wrist_camera,
+        image_order=list(variant.image_order),  # 直接使用 camera0, camera1, camera2, camera3
         max_timesteps=variant.real_env_max_steps,
         gripper_indices=tuple(variant.gripper_indices),
         arm_dof=variant.arm_dof,
         control_hz=variant.control_hz,
+        is_dual_arm=False,  # 单臂配置（与 inference.py 对齐）
     )
     if len(robot_config["image_order"]) != variant.num_cameras:
         raise ValueError(
@@ -139,13 +152,18 @@ def main(variant):
             f"got {variant.num_cameras} vs {len(robot_config['image_order'])}"
         )
 
+    # ========== 3. 初始化 RL Agent（PixelSAC：图像编码器 + SAC） ==========
+    # DummyEnv 提供占位的 observation/action space，用于初始化神经网络形状
+    # 实际观测包含：
+    #   - pixels: [H, W, C*num_cameras, 1] 拼接的多摄像头图像
+    #   - state:  [proprio_dim + img_feature_dim, 1] 关节+夹爪+视觉嵌入
     dummy_env = DummyEnv(variant)
     sample_obs = add_batch_dim(dummy_env.observation_space.sample())
     sample_action = add_batch_dim(dummy_env.action_space.sample())
     logging.info("sample obs shapes %s", [(k, v.shape) for k, v in sample_obs.items()])
     logging.info("sample action shape %s", sample_action.shape)
 
-    agent = PixelSACLearner(variant.seed, sample_obs, sample_action, **kwargs)
+    agent = PixelSACLearner(variant.seed, sample_obs, sample_action, **kwargs)  # 初始化 actor/critic 网络
 
     if variant.restore_path != "":
         logging.info("restoring from %s", variant.restore_path)
