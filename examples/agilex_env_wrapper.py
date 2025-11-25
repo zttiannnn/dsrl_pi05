@@ -16,10 +16,17 @@ import numpy as np
 import yaml
 
 
-from openpi.third_party.agilex.agilexfollower import AlohaAgileXFollower
-from openpi.third_party.agilex.agilexconfig import AlohaAgileXFollowerConfig
-from openpi.third_party.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from openpi.third_party.cameras.orbbec.configuration_orbbec import OrbbecCameraConfig
+try:
+    from openpi.third_party.agilex.agilexfollower import AlohaAgileXFollower
+    from openpi.third_party.agilex.agilexconfig import AlohaAgileXFollowerConfig
+    from openpi.third_party.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+    from openpi.third_party.cameras.orbbec.configuration_orbbec import OrbbecCameraConfig
+except ImportError:
+    # Fallback: assume 'third_party' is in PYTHONPATH (e.g. added by launch script)
+    from third_party.agilex.agilexfollower import AlohaAgileXFollower
+    from third_party.agilex.agilexconfig import AlohaAgileXFollowerConfig
+    from third_party.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+    from third_party.cameras.orbbec.configuration_orbbec import OrbbecCameraConfig
 
 
 LOGGER = logging.getLogger(__name__)

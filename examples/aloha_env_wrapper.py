@@ -11,7 +11,7 @@ from typing import Optional
 
 import numpy as np
 
-from openpi05.examples.aloha_real import env as aloha_env
+from openpi.examples.aloha_real import env as aloha_env
 
 
 class AlohaRobotEnv:

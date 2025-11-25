@@ -1,6 +1,15 @@
 import argparse
 import sys
+import os
 from typing import Dict
+
+# Ensure 'openpi' directory is in PYTHONPATH to allow importing 'third_party'
+# Assuming this script is in examples/ and openpi/ is a sibling of examples/..
+# i.e. dsrl_pi05/examples/launch_train_real_aloha.py -> dsrl_pi05/openpi
+current_dir = os.path.dirname(os.path.abspath(__file__))
+openpi_dir = os.path.join(os.path.dirname(current_dir), "openpi")
+if openpi_dir not in sys.path:
+    sys.path.insert(0, openpi_dir)
 
 import yaml
 
@@ -92,7 +101,7 @@ if __name__ == "__main__":
         type=int,
         help="maximum number of low-level control steps per real rollout",
     )
-    parser.add_argument("--control_hz", default=15, type=int, help="command frequency for the robot")
+    parser.add_argument("--control_hz", default=30, type=int, help="command frequency for the robot")
     parser.add_argument("--agilex_port", default="", help="Serial/USB device path for AgileX follower")
     parser.add_argument("--agilex_robot_id", default="left", help="Follower arm identifier (left/right)")
     parser.add_argument(

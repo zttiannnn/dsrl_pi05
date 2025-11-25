@@ -29,7 +29,8 @@ python3 examples/launch_train_real_aloha.py \
 --num_cameras 4 \
 --proprio_dim 7 \
 --gripper_indices -1 \
---task "pick up the PCB board from the conveyor belt and place it into the yellow container." \
+--control_hz 30 \
+--task "pick up the PCB board from the conveyor belt." \
 --policy_checkpoint /home/test/jemotor/jemodel/pi05/1114_pi05_test/50000/ \
 --policy_config pi05_agileX \
 --agilex_port can_right \

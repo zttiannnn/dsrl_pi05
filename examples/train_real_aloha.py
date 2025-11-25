@@ -125,7 +125,7 @@ def main(variant):
             port=variant.agilex_port,                # 串口设备路径，如 /dev/ttyACM0
             robot_id=getattr(variant, "agilex_robot_id", "left"),  # 机械臂 ID
             camera_config=getattr(variant, "agilex_camera_dict", None),
-            camera_config_path=(variant.agilex_camera_yaml or None),  # 摄像头 YAML 配置
+            camera_config_path=None,  # 摄像头 YAML 配置
             max_relative_target=getattr(variant, "agilex_max_relative_target", None),
             use_degrees=bool(getattr(variant, "agilex_use_degrees", False)),
             prompt=variant.instruction,  # 任务提示词（记录用，实际未在 env 中使用）
@@ -140,6 +140,7 @@ def main(variant):
 
     robot_config = dict(
         image_order=list(variant.image_order),  # 直接使用 camera0, camera1, camera2, camera3
+        external_camera=variant.image_order[0], # 默认使用第一个相机作为外部相机用于视频录制
         max_timesteps=variant.real_env_max_steps,
         gripper_indices=tuple(variant.gripper_indices),
         arm_dof=variant.arm_dof,

@@ -224,28 +224,33 @@ def collect_traj(
 
                 if i == 0:
                     noise = jax.random.normal(key, (1, *agent.action_chunk_shape))
-                    noise_repeat = jax.numpy.repeat(noise[:, -1:, :], 10 - noise.shape[1], axis=1)
+                    noise_repeat = jax.numpy.repeat(noise[:, -1:, :], 50 - noise.shape[1], axis=1)
                     noise = jax.numpy.concatenate([noise, noise_repeat], axis=1)
                     actions_noise = noise[0, : agent.action_chunk_shape[0], :]
                 else:
                     actions_noise = agent.sample_actions(obs_dict)
                     actions_noise = np.reshape(actions_noise, agent.action_chunk_shape)
-                    noise = np.repeat(actions_noise[-1:, :], 10 - actions_noise.shape[0], axis=0)
+                    noise = np.repeat(actions_noise[-1:, :], 50 - actions_noise.shape[0], axis=0)
                     noise = jax.numpy.concatenate([actions_noise, noise], axis=0)[None]
 
                 action_list.append(actions_noise)
                 obs_list.append(obs_dict)
                 action = agent_dp.infer(request_data, noise=np.asarray(noise))["actions"]
 
+            # action_t = action[t % query_frequency]
+
+            # # 对于 AgileX 机械臂，策略输出通常是原始的电机脉冲数值（raw counts），
+            # # 因此不能进行 [-1, 1] 的截断，也不能简单地二值化夹爪（除非策略输出就是二值的）。
+            # # 我们直接使用策略输出的动作。
+            # # for idx in robot_config["gripper_indices"]:
+            # #     if action_t[idx].item() > 0.5:
+            # #         action_t[idx] = 1.0
+            # #     else:
+            # #         action_t[idx] = 0.0
+
+            # # action_t = np.clip(action_t, -1, 1)
+            
             action_t = action[t % query_frequency]
-
-            for idx in robot_config["gripper_indices"]:
-                if action_t[idx].item() > 0.5:
-                    action_t[idx] = 1.0
-                else:
-                    action_t[idx] = 0.0
-
-            action_t = np.clip(action_t, -1, 1)
 
             try:
                 env.step(action_t)
@@ -323,6 +328,14 @@ def collect_traj(
         ImageSequenceClip(list(video), fps=15).write_videofile(video_path, codec="libx264")
 
         print("Episode Done! Press c after resetting the environment")
+        while True:
+            if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+                char_input = sys.stdin.read(1)
+                if char_input.lower() == "c":
+                    print("Continuing to next episode...")
+                    break
+            time.sleep(0.01)
+
         try:
             env.reset()
         except Exception as exc:  # pragma: no cover

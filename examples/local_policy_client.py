@@ -73,9 +73,12 @@ def _policy_worker(in_q: mp.Queue, out_q: mp.Queue, config_name: str, checkpoint
                     res = policy.get_prefix_rep(obs)  # 返回 [batch, seq, feat_dim]
                     out_q.put((req_id, {"result": res}))
                 else:
-                    # 兼容旧策略：直接调用 infer 尝试提取特征
-                    res = policy.infer(obs)
-                    out_q.put((req_id, {"result": res}))
+                    error_msg = (
+                        f"Policy {config_name} does not support 'get_prefix_rep'. "
+                        "DSRL training requires the policy to expose internal visual features."
+                    )
+                    logging.error(error_msg)
+                    out_q.put((req_id, {"error": error_msg}))
             elif method == "get_server_metadata":
                 meta = getattr(policy, "metadata", {})
                 out_q.put((req_id, {"result": meta}))
