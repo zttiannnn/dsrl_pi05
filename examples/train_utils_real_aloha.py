@@ -379,8 +379,10 @@ def _extract_observation(robot_config, obs_dict):
             img = img.transpose(1, 2, 0)
         # 只保留 RGB 通道
         img = img[..., :3]
-        # BGR -> RGB
-        img = img[..., ::-1]
+        # 注意：Orbbec 相机通过 openpi 的 third_party 返回的是 RGB 格式
+        # 不需要 BGR -> RGB 转换（与 inference.py 保持一致）
+        # 如果使用 OpenCV 相机，则需要取消下行注释：
+        # img = img[..., ::-1]  # BGR -> RGB (仅 OpenCV)
         processed[f"{cam_name}_image"] = img
 
     qpos = np.asarray(obs_dict["state"], dtype=np.float32)
@@ -411,25 +413,33 @@ def get_pi0_input(obs, robot_config, instruction):
     
     注意：
       - inference.py 中直接使用 robot.get_observation() 返回的原始观测
-      - 所有配置的摄像头图像（camera0-3）都会传给策略
-      - 策略内部会自行选择需要的视角
+      - 策略内部的 AgileXInputs transform 期望格式：
+        {
+            "state": np.array([7,]),
+            "images": {"camera0": img_CHW, "camera1": img_CHW, ...},
+            "prompt": "task description",  # 可选，如果没有会使用 default_prompt
+        }
+      - 图像格式：CHW (通道在前) 或 HWC (通道在后)，transform 内部会自动转换
     """
-    # 与 inference.py 一致：直接传递全部相机图像
-    request_data = {
-        "observation/joint_position": obs["joint_position"],
-        "observation/gripper_position": obs["gripper_position"],
-        "prompt": instruction,
-    }
-    
-    # 添加所有配置的相机图像（与 inference.py 完全一致）
+    # 构造与 inference.py 相同格式的观测字典
+    # 注意：需要将 HWC 图像转换为 CHW 格式以匹配 AlohaAgileXFollower 的输出
+    images = {}
     for cam_name in robot_config["image_order"]:
         img_key = f"{cam_name}_image"
         if img_key in obs:
-            # 注意：这里使用与 inference.py 相同的键名格式
-            # 策略内部会根据配置选择需要的视角
-            request_data[f"observation/{cam_name}"] = image_tools.resize_with_pad(
-                obs[img_key], 224, 224
-            )
+            # obs 中的图像已经是 HWC 格式（经过 _extract_observation 处理）
+            # resize 并保持 HWC 格式（AgileXInputs 内部会处理格式转换）
+            img = image_tools.resize_with_pad(obs[img_key], 224, 224)
+            images[cam_name] = img
+    
+    # 拼接 state（与 inference.py 一致）
+    state = np.concatenate([obs["joint_position"], obs["gripper_position"]])
+    
+    request_data = {
+        "state": state,
+        "images": images,
+        "prompt": instruction,
+    }
     
     return request_data
 
