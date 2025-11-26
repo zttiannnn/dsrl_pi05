@@ -82,6 +82,7 @@ if __name__ == "__main__":
     parser.add_argument("--proprio_dim", default=7, help="dimension of proprioceptive state (single arm: 6 joints + 1 gripper)", type=int)
     parser.add_argument("--img_feature_dim", default=2024, help="dimension of pi0 visual features", type=int)
     parser.add_argument("--arm_dof", default=6, help="Number of joints per arm", type=int)
+    parser.add_argument("--action_horizon", default=50, help="pi05 action horizon (number of actions per chunk)", type=int)
     parser.add_argument(
         "--image_order",
         nargs="+",

@@ -47,7 +47,10 @@ class DummyEnv(gym.ObservationWrapper):
             state_dim = variant.proprio_dim + variant.img_feature_dim
             obs_dict["state"] = Box(low=-1.0, high=1.0, shape=(state_dim, 1), dtype=np.float32)
         self.observation_space = Dict(obs_dict)
-        self.action_space = Box(low=-1, high=1, shape=(1, 32), dtype=np.float32)
+        # action_space 维度：(1, action_dim)
+        # 与 pi05_agileX 的 action_dim=7 对齐，后续在 train_utils 中 repeat 到 action_horizon=50
+        action_dim = variant.proprio_dim  # 7 for 单臂 AgileX
+        self.action_space = Box(low=-1, high=1, shape=(1, action_dim), dtype=np.float32)
 
 
 def main(variant):
