@@ -7,7 +7,7 @@ export EXP=./logs/$proj_name
 export CUDA_VISIBLE_DEVICES=$device_id
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-python3 examples/launch_train_real_aloha.py \
+python3 -m examples.launch_train_real_aloha \
 --algorithm pixel_sac \
 --env agilex \
 --robot_type agilex \
@@ -31,7 +31,7 @@ python3 examples/launch_train_real_aloha.py \
 --gripper_indices -1 \
 --control_hz 30 \
 --task "pick up the PCB board from the conveyor belt." \
---policy_checkpoint /home/test/jemotor/jemodel/pi05/1114_pi05_test/50000/ \
+--policy_checkpoint /home/test/jemotor/jemodel/pi05/1114_pi05_test/80000/ \
 --policy_config pi05_agileX \
 --agilex_port can_right \
 --agilex_cameras_inline "${camera_spec}"

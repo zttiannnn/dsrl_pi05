@@ -19,7 +19,7 @@ from jaxrl2.utils.general_utils import add_batch_dim
 from jaxrl2.utils.wandb_logger import WandBLogger, create_exp_name
 
 from examples.agilex_env_wrapper import AgileXFollowerEnv
-from examples.aloha_env_wrapper import AlohaRobotEnv
+# from examples.aloha_env_wrapper import AlohaRobotEnv
 from examples.local_policy_client import LocalPolicyClient
 from examples.train_utils_real_aloha import trajwise_alternating_training_loop
 
