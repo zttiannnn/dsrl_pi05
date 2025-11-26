@@ -1,0 +1,84 @@
+(dsrl) test@q670:~/jemotor/dsrl_pi05$ bash examples/scripts/run_real_agilex.sh 
+2025-11-26 09:35:59.477340: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1764120959.487019 1198957 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1764120959.490013 1198957 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1764120959.497868 1198957 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764120959.497880 1198957 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764120959.497882 1198957 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764120959.497883 1198957 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+load extensions from /home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/extensions
+{'seed': 0, 'launch_group_id': '', 'eval_episodes': 10, 'env': 'agilex', 'robot_type': 'agilex', 'log_interval': 100, 'eval_interval': 2000, 'checkpoint_interval': -1, 'batch_size': 256, 'max_steps': 500000, 'add_states': 1, 'wandb_project': 'DSRL_pi05_AgileX', 'num_initial_traj_collect': 1, 'algorithm': 'pixel_sac', 'prefix': 'dsrl_pi05_agilex', 'suffix': '', 'multi_grad_step': 30, 'resize_image': 224, 'query_freq': 25, 'task': 'pick up the PCB board from the conveyor belt.', 'policy_checkpoint': '/home/test/jemotor/jemodel/pi05/1114_pi05_test/80000/', 'policy_config': 'pi05_agileX', 'proprio_dim': 7, 'img_feature_dim': 2024, 'arm_dof': 6, 'action_horizon': 50, 'image_order': ['camera0', 'camera1', 'camera2', 'camera3'], 'gripper_indices': [-1], 'real_env_max_steps': 1000, 'control_hz': 30, 'agilex_port': 'can_right', 'agilex_robot_id': 'left', 'agilex_cameras_inline': '{camera0: {type: orbbec, index_or_path: CP02653000ZL, width: 640, height: 480, fps: 30},camera1: {type: orbbec, index_or_path: CP02653000YJ, width: 640, height: 480, fps: 30},camera2: {type: orbbec, index_or_path: CP02653000YR, width: 640, height: 480, fps: 30},camera3: {type: orbbec, index_or_path: CP02653000Y4, width: 640, height: 480, fps: 30}}', 'agilex_max_relative_target': None, 'agilex_use_degrees': False, 'actor_lr': 0.0001, 'critic_lr': 0.0003, 'temp_lr': 0.0003, 'hidden_dims': [1024, 1024, 1024], 'cnn_features': (32, 32, 32, 32), 'cnn_strides': (3, 2, 2, 2), 'cnn_padding': 'VALID', 'latent_dim': 50, 'discount': 0.99, 'tau': 0.005, 'critic_reduction': 'min', 'dropout_rate': 0.0, 'aug_next': 1, 'use_bottleneck': 1, 'encoder_type': 'small', 'encoder_norm': 'group', 'use_spatial_softmax': 1, 'softmax_temperature': -1, 'target_entropy': 0.0, 'num_qs': 2, 'action_magnitude': 2.5, 'num_cameras': 4, 'train_kwargs': {'actor_lr': 0.0001, 'critic_lr': 0.0003, 'temp_lr': 0.0003, 'hidden_dims': [1024, 1024, 1024], 'cnn_features': (32, 32, 32, 32), 'cnn_strides': (3, 2, 2, 2), 'cnn_padding': 'VALID', 'latent_dim': 50, 'discount': 0.99, 'tau': 0.005, 'critic_reduction': 'min', 'dropout_rate': 0.0, 'aug_next': 1, 'use_bottleneck': 1, 'encoder_type': 'small', 'encoder_norm': 'group', 'use_spatial_softmax': 1, 'softmax_temperature': -1, 'target_entropy': 0.0, 'num_qs': 2, 'action_magnitude': 2.5, 'num_cameras': 4}, 'agilex_camera_dict': {'camera0': {'type': 'orbbec', 'index_or_path': 'CP02653000ZL', 'width': 640, 'height': 480, 'fps': 30}, 'camera1': {'type': 'orbbec', 'index_or_path': 'CP02653000YJ', 'width': 640, 'height': 480, 'fps': 30}, 'camera2': {'type': 'orbbec', 'index_or_path': 'CP02653000YR', 'width': 640, 'height': 480, 'fps': 30}, 'camera3': {'type': 'orbbec', 'index_or_path': 'CP02653000Y4', 'width': 640, 'height': 480, 'fps': 30}}, 'instruction': 'pick up the PCB board from the conveyor belt.'}
+writing to output dir ./logs/DSRL_pi05_AgileX/dsrl_pi05_agilex_2025_11_26_09_36_02_0000--s-0
+wandb using experimentid:  dsrl_pi05_agilex_2025_11_26_09_36_02_0000--s-0
+wandb using project:  DSRL_pi05_AgileX
+wandb using group:  dsrl_pi05_agilex_
+wandb_config.py not found, using default wandb config
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: (1) Create a W&B account
+wandb: (2) Use an existing W&B account
+wandb: (3) Don't visualize my results
+wandb: Enter your choice: 2
+wandb: You chose 'Use an existing W&B account'
+wandb: Logging into wandb.ai. (Learn how to deploy a W&B server locally: https://wandb.me/wandb-server)
+wandb: You can find your API key in your browser here: https://wandb.ai/authorize
+wandb: Paste an API key from your profile and hit enter, or press ctrl+c to quit: 
+wandb: No netrc file found, creating one.
+wandb: Appending key for api.wandb.ai to your netrc file: /home/test/.netrc
+wandb: Currently logged in as: zttiannnn (zttiannnn-university-of-macau) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.9
+wandb: Run data is saved locally in /tmp/tmpnfqxkyar/dsrl_pi05_agilex_2025_11_26_09_36_02_0000--s-0/wandb/run-20251126_093737-dsrl_pi05_agilex_2025_11_26_09_36_02_0000--s-0
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run dsrl_pi05_agilex_2025_11_26_09_36_02_0000--s-0
+wandb: ⭐️ View project at https://wandb.ai/zttiannnn-university-of-macau/DSRL_pi05_AgileX
+wandb:  View run at https://wandb.ai/zttiannnn-university-of-macau/DSRL_pi05_AgileX/runs/dsrl_pi05_agilex_2025_11_26_09_36_02_0000--s-0
+2025-11-26 09:37:38.920779: E external/local_xla/xla/stream_executor/cuda/cuda_fft.cc:467] Unable to register cuFFT factory: Attempting to register factory for plugin cuFFT when one has already been registered
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+E0000 00:00:1764121058.929979 1199632 cuda_dnn.cc:8579] Unable to register cuDNN factory: Attempting to register factory for plugin cuDNN when one has already been registered
+E0000 00:00:1764121058.932841 1199632 cuda_blas.cc:1407] Unable to register cuBLAS factory: Attempting to register factory for plugin cuBLAS when one has already been registered
+W0000 00:00:1764121058.942480 1199632 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764121058.942506 1199632 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764121058.942509 1199632 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+W0000 00:00:1764121058.942514 1199632 computation_placer.cc:177] computation placer already registered. Please check linkage and avoid linking the same target more than once.
+load extensions from /home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/extensions
+ERROR:root:Failed to load policy in worker: openpi package is not available on PYTHONPATH
+Traceback (most recent call last):
+  File "/home/test/jemotor/dsrl_pi05/examples/local_policy_client.py", line 45, in _policy_worker
+    raise RuntimeError("openpi package is not available on PYTHONPATH")
+RuntimeError: openpi package is not available on PYTHONPATH
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/test/jemotor/dsrl_pi05/examples/launch_train_real_aloha.py", line 166, in <module>
+    main(variant)
+  File "/home/test/jemotor/dsrl_pi05/examples/train_real_aloha.py", line 109, in main
+    metadata = agent_dp.get_server_metadata() or {}  # 可能包含 reset_pose 等配置
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/jemotor/dsrl_pi05/examples/local_policy_client.py", line 148, in get_server_metadata
+    resp = self._rpc("get_server_metadata", {})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/jemotor/dsrl_pi05/examples/local_policy_client.py", line 125, in _rpc
+    raise TimeoutError(f"Timeout waiting for policy worker response (method={method})")
+TimeoutError: Timeout waiting for policy worker response (method=get_server_metadata)
+
+
+load extensions from /home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/extensions
+ERROR:root:Failed to load policy in worker: openpi package is not available on PYTHONPATH
+Traceback (most recent call last):
+  File "/home/test/jemotor/dsrl_pi05/examples/local_policy_client.py", line 45, in _policy_worker
+    raise RuntimeError("openpi package is not available on PYTHONPATH")
+RuntimeError: openpi package is not available on PYTHONPATH
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/test/jemotor/dsrl_pi05/examples/launch_train_real_aloha.py", line 166, in <module>
+    main(variant)
+  File "/home/test/jemotor/dsrl_pi05/examples/train_real_aloha.py", line 109, in main
+    metadata = agent_dp.get_server_metadata() or {}  # 可能包含 reset_pose 等配置
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/jemotor/dsrl_pi05/examples/local_policy_client.py", line 148, in get_server_metadata
+    resp = self._rpc("get_server_metadata", {})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/jemotor/dsrl_pi05/examples/local_policy_client.py", line 125, in _rpc
+    raise TimeoutError(f"Timeout waiting for policy worker response (method={method})")
+TimeoutError: Timeout waiting for policy worker response (method=get_server_metadata)

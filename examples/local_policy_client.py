@@ -16,13 +16,25 @@ Usage: in training code, do
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
+import sys
 import time
 import logging
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
+# 获取 openpi 目录路径（用于子进程）
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_OPENPI_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "openpi")
+_OPENPI_SRC_DIR = os.path.join(_OPENPI_DIR, "src")
+
+# 尝试导入 openpi（主进程）
 try:
+    # 确保路径在 sys.path 中
+    for p in [_OPENPI_DIR, _OPENPI_SRC_DIR]:
+        if p not in sys.path:
+            sys.path.insert(0, p)
     from openpi.policies import policy_config as _policy_config
     from openpi.training import config as _config
 except Exception:  # pragma: no cover - training runtime must provide openpi
@@ -38,13 +50,25 @@ _DEFAULT_CONFIG = "pi05_agileX"
 #   1. 一次性加载 pi05_agileX 策略到 CUDA（避免主进程显存占用）
 #   2. 循环接收 (req_id, method, payload) 并返回 (req_id, response)
 #   3. 支持 infer、get_prefix_rep、get_server_metadata 三种方法
-def _policy_worker(in_q: mp.Queue, out_q: mp.Queue, config_name: str, checkpoint_dir: str, default_prompt: Optional[str]):
+def _policy_worker(in_q: mp.Queue, out_q: mp.Queue, config_name: str, checkpoint_dir: str, default_prompt: Optional[str], openpi_paths: list):
+    # 子进程中设置 PYTHONPATH（spawn 模式不继承父进程的 sys.path）
+    for p in openpi_paths:
+        if p not in sys.path:
+            sys.path.insert(0, p)
+    
+    # 在子进程中重新导入 openpi
+    try:
+        from openpi.policies import policy_config as _policy_config_local
+        from openpi.training import config as _config_local
+    except ImportError as e:
+        logging.exception("Failed to import openpi in worker: %s", e)
+        out_q.put((None, {"error": f"Failed to import openpi: {e}"}))
+        return
+    
     # 加载策略配置和权重（仅在子进程初始化时执行一次）
     try:
-        if _config is None or _policy_config is None:
-            raise RuntimeError("openpi package is not available on PYTHONPATH")
-        cfg = _config.get_config(config_name)  # 默认 pi05_agileX
-        policy = _policy_config.create_trained_policy(cfg, checkpoint_dir, default_prompt=default_prompt)
+        cfg = _config_local.get_config(config_name)  # 默认 pi05_agileX
+        policy = _policy_config_local.create_trained_policy(cfg, checkpoint_dir, default_prompt=default_prompt)
     except Exception as e:
         logging.exception("Failed to load policy in worker: %s", e)
         out_q.put((None, {"error": str(e)}))
@@ -99,11 +123,13 @@ class LocalPolicyClient:
       - close()
     """
 
-    def __init__(self, checkpoint_dir: str, config_name: str = _DEFAULT_CONFIG, default_prompt: Optional[str] = None, timeout: float = 10.0):
+    def __init__(self, checkpoint_dir: str, config_name: str = _DEFAULT_CONFIG, default_prompt: Optional[str] = None, timeout: float = 60.0):
         self._ctx = mp.get_context("spawn")
         self._in_q: mp.Queue = self._ctx.Queue(maxsize=8)
         self._out_q: mp.Queue = self._ctx.Queue(maxsize=8)
-        self._proc = self._ctx.Process(target=_policy_worker, args=(self._in_q, self._out_q, config_name, checkpoint_dir, default_prompt))
+        # 传递 openpi 路径给子进程
+        openpi_paths = [_OPENPI_DIR, _OPENPI_SRC_DIR]
+        self._proc = self._ctx.Process(target=_policy_worker, args=(self._in_q, self._out_q, config_name, checkpoint_dir, default_prompt, openpi_paths))
         self._proc.daemon = True
         self._proc.start()
         self._next_id = 1

@@ -6,6 +6,7 @@ camera_spec='{camera0: {type: orbbec, index_or_path: CP02653000ZL, width: 640, h
 export EXP=./logs/$proj_name
 export CUDA_VISIBLE_DEVICES=$device_id
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export PYTHONPATH="${PYTHONPATH}:/home/test/jemotor/dsrl_pi05/openpi:/home/test/jemotor/dsrl_pi05/openpi/src"
 
 python3 examples/launch_train_real_aloha.py \
 --algorithm pixel_sac \
