@@ -27,14 +27,14 @@ import numpy as np
 # 获取 openpi 目录路径（用于子进程）
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _OPENPI_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "openpi")
+# 注意：真正的 openpi 包在 openpi/src/openpi/ 下，所以只需要添加 src 目录
 _OPENPI_SRC_DIR = os.path.join(_OPENPI_DIR, "src")
 
 # 尝试导入 openpi（主进程）
 try:
-    # 确保路径在 sys.path 中
-    for p in [_OPENPI_DIR, _OPENPI_SRC_DIR]:
-        if p not in sys.path:
-            sys.path.insert(0, p)
+    # 只添加 src 目录（不要添加 _OPENPI_DIR，否则会找到错误的 openpi/__init__.py）
+    if _OPENPI_SRC_DIR not in sys.path:
+        sys.path.insert(0, _OPENPI_SRC_DIR)
     from openpi.policies import policy_config as _policy_config
     from openpi.training import config as _config
 except Exception:  # pragma: no cover - training runtime must provide openpi
@@ -52,6 +52,7 @@ _DEFAULT_CONFIG = "pi05_agileX"
 #   3. 支持 infer、get_prefix_rep、get_server_metadata 三种方法
 def _policy_worker(in_q: mp.Queue, out_q: mp.Queue, config_name: str, checkpoint_dir: str, default_prompt: Optional[str], openpi_paths: list):
     # 子进程中设置 PYTHONPATH（spawn 模式不继承父进程的 sys.path）
+    # 只添加 src 目录，避免找到错误的 openpi/__init__.py
     for p in openpi_paths:
         if p not in sys.path:
             sys.path.insert(0, p)
@@ -127,8 +128,8 @@ class LocalPolicyClient:
         self._ctx = mp.get_context("spawn")
         self._in_q: mp.Queue = self._ctx.Queue(maxsize=8)
         self._out_q: mp.Queue = self._ctx.Queue(maxsize=8)
-        # 传递 openpi 路径给子进程
-        openpi_paths = [_OPENPI_DIR, _OPENPI_SRC_DIR]
+        # 只传递 src 目录给子进程（不要传 _OPENPI_DIR）
+        openpi_paths = [_OPENPI_SRC_DIR]
         self._proc = self._ctx.Process(target=_policy_worker, args=(self._in_q, self._out_q, config_name, checkpoint_dir, default_prompt, openpi_paths))
         self._proc.daemon = True
         self._proc.start()
