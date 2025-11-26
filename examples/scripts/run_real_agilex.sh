@@ -1,11 +1,13 @@
 #!/bin/bash
 proj_name=DSRL_pi05_AgileX
 device_id=0
-camera_spec='{camera0: {type: orbbec, index_or_path: CP02653000ZL, width: 640, height: 480, fps: 30},camera1: {type: orbbec, index_or_path: CP02653000YJ, width: 640, height: 480, fps: 30},camera2: {type: orbbec, index_or_path: CP02653000YR, width: 640, height: 480, fps: 30},camera3: {type: orbbec, index_or_path: CP02653000Y4, width: 640, height: 480, fps: 30}}'
+camera_spec='{camera0: {type: orbbec, index_or_path: CP02653000ZL, width: 640, height: 480, fps: 30},camera1: {type: orbbec, index_or_path: CP02653000YJ, width: 640, height: 480, fps: 30},camera2: {type: orbbec, index_or_path: CP02653000YR, width: 640, height: 480, fps: 30},camera3: {type: orbbec, index_or_path: CP02653000R4, width: 640, height: 480, fps: 30}}'
 
 export EXP=./logs/$proj_name
 export CUDA_VISIBLE_DEVICES=$device_id
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
+# export PYTHONPATH="${PYTHONPATH}:/home/test/jemotor/dsrl_pi05/openpi/src"
+export PYTHONPATH="${PYTHONPATH}:/home/test/jemotor/dsrl_pi05/openpi:/home/test/jemotor/dsrl_pi05/openpi/src"
 
 python3 -m examples.launch_train_real_aloha \
 --algorithm pixel_sac \
@@ -24,7 +26,7 @@ python3 -m examples.launch_train_real_aloha \
 --query_freq 25 \
 --hidden_dims 1024 1024 1024 \
 --num_qs 2 \
---real_env_max_steps 1000 \
+--real_env_max_steps 400 \
 --image_order camera0 camera1 camera2 camera3 \
 --num_cameras 4 \
 --proprio_dim 7 \

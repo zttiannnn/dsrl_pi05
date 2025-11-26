@@ -8,9 +8,24 @@ from typing import Dict
 # i.e. dsrl_pi05/examples/launch_train_real_aloha.py -> dsrl_pi05/openpi
 current_dir = os.path.dirname(os.path.abspath(__file__))
 openpi_dir = os.path.join(os.path.dirname(current_dir), "openpi")
+openpi_src_dir = os.path.join(openpi_dir, "src")
 if openpi_dir not in sys.path:
-    sys.path.insert(0, openpi_dir)
+    # Ensure src is preferred so we load the package from openpi/src/openpi
+    if openpi_src_dir not in sys.path:
+        sys.path.insert(0, openpi_src_dir)
+    if openpi_dir not in sys.path:
+        sys.path.insert(0, openpi_dir)
 
+    # After import, make sure openpi.__path__ contains the third_party folder
+    try:
+        import importlib
+        pkg = importlib.import_module("openpi")
+        third_party = os.path.join(openpi_dir, "third_party")
+        if os.path.isdir(third_party) and third_party not in getattr(pkg, "__path__", []):
+            pkg.__path__.append(third_party)
+    except Exception:
+        # Best-effort only; failures will surface when importing specific modules
+        pass
 import yaml
 
 from examples.train_real_aloha import main

@@ -114,6 +114,35 @@ def main(variant):
         metadata,
     )
 
+    ## 暂时缓解shape不一致的报错
+
+    # # Probe the pi0 policy prefix representation dimension and adjust
+    # # `variant.img_feature_dim` if it doesn't match the actual representation size.
+    # # This avoids a mismatch between the DummyEnv observation shape and the
+    # # prefix representation returned by the policy (which caused a ValueError
+    # # when inserting into the replay buffer).
+    # try:
+    #     # build a minimal request with zero images (HWC) for each camera
+    #     dummy_images = {}
+    #     for cam_name in getattr(variant, "image_order", [])[0:]:
+    #         dummy_images[cam_name] = np.zeros((variant.resize_image, variant.resize_image, 3), dtype=np.uint8)
+    #     probe_request = {
+    #         "state": np.zeros(getattr(variant, "proprio_dim", 0), dtype=np.float32),
+    #         "images": dummy_images,
+    #         "prompt": getattr(variant, "instruction", ""),
+    #     }
+    #     rep, _ = agent_dp.get_prefix_rep(probe_request)
+    #     # rep expected shape: (batch, seq_len, feat)
+    #     probed_feat = int(rep.shape[-1])
+    #     if getattr(variant, "img_feature_dim", None) != probed_feat:
+    #         print(f"Adjusting variant.img_feature_dim from {getattr(variant, 'img_feature_dim', None)} to {probed_feat}")
+    #         variant.img_feature_dim = probed_feat
+    # except Exception as _exc:  # pragma: no cover - keep non-fatal
+    #     # If probing fails (hardware/policy issues), continue without changing
+    #     # the variant. The earlier error will still surface, but we avoid
+    #     # crashing here.
+    #     print("Warning: could not probe policy prefix representation size:", _exc)
+
     # ========== 2. 初始化硬件环境（AgileX 或 Aloha） ==========
     # 根据 --robot_type 选择对应的 wrapper：
     #   - AgileX: 连接松灵机械臂 + YAML 配置的摄像头（OpenCV/Orbbec）
@@ -169,7 +198,11 @@ def main(variant):
 
     agent = PixelSACLearner(variant.seed, sample_obs, sample_action, **kwargs)  # 初始化 actor/critic 网络
 
-    if variant.restore_path != "":
+    # variant may be a Namespace/dict-like that doesn't always contain
+    # `restore_path` (depends on how parse_training_args populates defaults).
+    # Use getattr with a default to avoid AttributeError when the CLI
+    # doesn't provide this option.
+    if getattr(variant, "restore_path", "") != "":
         logging.info("restoring from %s", variant.restore_path)
         agent.restore_checkpoint(variant.restore_path)
 
