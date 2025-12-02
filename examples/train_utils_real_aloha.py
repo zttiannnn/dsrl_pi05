@@ -29,6 +29,7 @@ def trajwise_alternating_training_loop(
     shard_fn=None,  # 多设备数据分片函数
     agent_dp=None,  # LocalPolicyClient：pi05 策略推理接口
     robot_config=None,  # 摄像头别名、控制频率等配置字典
+    start_step=0,
 ):
     """轨迹级交替训练主循环。
     
@@ -46,14 +47,14 @@ def trajwise_alternating_training_loop(
     if shard_fn is not None:
         replay_buffer_iterator = map(shard_fn, replay_buffer_iterator)  # 分片到多 GPU
 
-    i = 0  # 总训练步数
+    i = start_step  # 总训练步数
     total_env_steps = 0  # 累计环境交互步数
     total_num_traj = 0   # 累计轨迹数
     wandb_logger.log({"num_online_samples": 0}, step=i)
     wandb_logger.log({"num_online_trajs": 0}, step=i)
     wandb_logger.log({"env_steps": 0}, step=i)
 
-    with tqdm(total=variant.max_steps, initial=0) as pbar:
+    with tqdm(total=variant.max_steps, initial=start_step) as pbar:
         while i <= variant.max_steps:
             traj = collect_traj(
                 variant,
@@ -96,6 +97,10 @@ def trajwise_alternating_training_loop(
                 },
                 step=i,
             )
+            if variant.checkpoint_interval != -1:
+                if i % variant.checkpoint_interval == 0:
+                    agent.save_checkpoint(variant.outputdir, i, variant.checkpoint_interval)
+
 
 
 def add_online_data_to_buffer(variant, traj, online_replay_buffer):
@@ -167,7 +172,7 @@ def collect_traj(
     agent._rng, rng = jax.random.split(agent._rng)  # JAX 随机数生成器
 
     try:
-        env.reset()
+        env.reset(home_position=np.array([0,0,0,0,0,0,0]))
     except Exception as exc:  # pragma: no cover - hardware failure path
         print("Environment reset failed")
         import traceback
@@ -229,15 +234,15 @@ def collect_traj(
                     action_horizon = getattr(variant, "action_horizon", 50)
                     noise_repeat = jax.numpy.repeat(noise[:, -1:, :], action_horizon - noise.shape[1], axis=1)
                     noise = jax.numpy.concatenate([noise, noise_repeat], axis=1)
-                    actions_noise = noise[0, : agent.action_chunk_shape[0], :]
+                    actions_noise = noise[0, :agent.action_chunk_shape[0], :]
                 else:
                     # 后续阶段：使用 SAC 策略生成噪声
                     actions_noise = agent.sample_actions(obs_dict)
                     actions_noise = np.reshape(actions_noise, agent.action_chunk_shape)
                     # repeat 到 action_horizon（pi05_agileX 为 50）
                     action_horizon = getattr(variant, "action_horizon", 50)
-                    noise = np.repeat(actions_noise[-1:, :], action_horizon - actions_noise.shape[0], axis=0)
-                    noise = jax.numpy.concatenate([actions_noise, noise], axis=0)[None]
+                    noise_repeat = np.repeat(actions_noise[-1:, :], action_horizon - actions_noise.shape[0], axis=0)
+                    noise = jax.numpy.concatenate([actions_noise, noise_repeat], axis=0)[None]
 
                 action_list.append(actions_noise)
                 obs_list.append(obs_dict)
@@ -343,7 +348,7 @@ def collect_traj(
             time.sleep(0.01)
 
         try:
-            env.reset()
+           env.reset(home_position=np.array([0,0,0,0,0,0,0]))
         except Exception as exc:  # pragma: no cover
             print("Environment reset failed")
             import traceback

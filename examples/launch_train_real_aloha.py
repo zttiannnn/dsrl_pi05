@@ -95,7 +95,7 @@ if __name__ == "__main__":
         help="Policy config name passed to LocalPolicyClient (default: pi05_agileX).",
     )
     parser.add_argument("--proprio_dim", default=7, help="dimension of proprioceptive state (single arm: 6 joints + 1 gripper)", type=int)
-    parser.add_argument("--img_feature_dim", default=2024, help="dimension of pi0 visual features", type=int)
+    parser.add_argument("--img_feature_dim", default=2048, help="dimension of pi0 visual features", type=int)
     parser.add_argument("--arm_dof", default=6, help="Number of joints per arm", type=int)
     parser.add_argument("--action_horizon", default=50, help="pi05 action horizon (number of actions per chunk)", type=int)
     parser.add_argument(
@@ -136,6 +136,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Forward use_degrees flag to AlohaAgileXFollowerConfig",
     )
+    parser.add_argument("--load_checkpoint_path",default="", help="Path to checkpoint to resume training from.", type=str)
+    parser.add_argument("--start_step", default=0, help="Step to start training from.", type=int)
 
     train_args_dict = dict(
         actor_lr=1e-4,

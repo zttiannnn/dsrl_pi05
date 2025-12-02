@@ -1,0 +1,145 @@
+Episode Done! Press c after resetting the environment
+Continuing to next episode...
+online buffer timesteps length: 286
+online buffer num traj: 10
+total env steps: 7026
+num_gradsteps: 30
+  5%|██▉                                                        | 300/6000 [13:54<4:24:08,  2.78s/it]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/test/jemotor/dsrl_pi05/examples/launch_train_real_aloha.py", line 183, in <module>
+    main(variant)
+  File "/home/test/jemotor/dsrl_pi05/examples/train_real_aloha.py", line 220, in main
+    trajwise_alternating_training_loop(
+  File "/home/test/jemotor/dsrl_pi05/examples/train_utils_real_aloha.py", line 102, in trajwise_alternating_training_loop
+    agent.save_checkpoint(variant.outputdir, i, variant.checkpoint_interval)
+  File "/home/test/jemotor/dsrl_pi05/jaxrl2/agents/agent.py", line 53, in save_checkpoint
+    checkpoints.save_checkpoint(dir, self._save_dict, step, prefix='checkpoint', overwrite=False, keep_every_n_steps=keep_every_n_steps)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/flax/training/checkpoints.py", line 694, in save_checkpoint
+    orbax_checkpointer.save(
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/checkpointers/checkpointer.py", line 255, in save
+    self._handler.save(tmpdir.get(), args=ckpt_args)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/handlers/pytree_checkpoint_handler.py", line 594, in save
+    self._handler_impl.save(directory, args=args)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/handlers/base_pytree_checkpoint_handler.py", line 554, in save
+    asyncio_utils.run_sync(async_save(directory, *args, **kwargs))
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/asyncio_utils.py", line 50, in run_sync
+    return asyncio.run(coro)
+           ^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/handlers/base_pytree_checkpoint_handler.py", line 552, in async_save
+    f.result()  # Block on result.
+    ^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 174, in result
+    f.result(timeout=time_remaining)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 397, in result
+    return self._f.result(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 348, in result
+    return self._t.result(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 297, in result
+    self.join(timeout=timeout)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 294, in join
+    raise self._exception
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 281, in run
+    super().run()
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 230, in _target_setting_result
+    self._result = target()
+                   ^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 341, in <lambda>
+    target=lambda: asyncio_utils.run_sync(coro),
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/asyncio_utils.py", line 50, in run_sync
+    return asyncio.run(coro)
+           ^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/handlers/base_pytree_checkpoint_handler.py", line 887, in _write_metadata_after_commits
+    await asyncio.to_thread(commit_future.result)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 397, in result
+    return self._f.result(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 348, in result
+    return self._t.result(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 297, in result
+    self.join(timeout=timeout)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 294, in join
+    raise self._exception
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 281, in run
+    super().run()
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 230, in _target_setting_result
+    self._result = target()
+                   ^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/futures/future.py", line 341, in <lambda>
+    target=lambda: asyncio_utils.run_sync(coro),
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/asyncio_utils.py", line 50, in run_sync
+    return asyncio.run(coro)
+           ^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/serialization/type_handlers.py", line 1070, in _background_serialize
+    array_write_spec = self._get_array_write_spec(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/serialization/type_handlers.py", line 937, in _get_array_write_spec
+    return _build_array_write_spec(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/serialization/type_handlers.py", line 228, in _build_array_write_spec
+    return ts_utils.ArrayWriteSpec(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/serialization/tensorstore_utils.py", line 368, in __init__
+    kvstore_tspec = build_kvstore_tspec(
+                    ^^^^^^^^^^^^^^^^^^^^
+  File "/home/test/miniconda3/envs/dsrl/lib/python3.11/site-packages/orbax/checkpoint/_src/serialization/tensorstore_utils.py", line 156, in build_kvstore_tspec
+    raise ValueError(f'Checkpoint path should be absolute. Got {directory}')
+ValueError: Checkpoint path should be absolute. Got logs/DSRL_pi05_AgileX/dsrl_pi05_agilex_2025_11_28_15_15_19_0000--s-0/checkpoint300.orbax-checkpoint-tmp-0
+
+
+Episode Done! Press c after resetting the environment
+Continuing to next episode...
+online buffer timesteps length: 264
+online buffer num traj: 10
+total env steps: 6490
+num_gradsteps: 30
+  5%|███                                                          | 299/6000 [07:23<11:15,  8.44it/s]WARNING:root:Conversion for <class 'jax._src.sharding_impls.PositionalSharding'> has not been implemented.
+WARNING:root:Conversion for <class 'jax._src.sharding_impls.PositionalSharding'> has not been implemented.
+WARNING:root:Conversion for <class 'jax._src.sharding_impls.PositionalSharding'> has not been implemented.
+WARNING:root:Conversion for <class 'jax._src.sharding_impls.PositionalSharding'> has not been implemented.
+  5%|███                                                          | 300/6000 [07:40<11:15,  8.44it/s'q' pressed, stopping loop.██████████████████████████████████▉      | 721/800 [00:29<00:02, 27.83it/s]
+ 90%|███████████████████████████████████████████████████████▉      | 721/800 [00:29<00:03, 24.18it/s]
+Trial finished. Mark as (1) Success or (0) Failure:

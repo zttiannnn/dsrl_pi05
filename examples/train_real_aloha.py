@@ -78,10 +78,12 @@ def main(variant):
     else:
         expname = create_exp_name(variant.prefix, seed=variant.seed)
 
-    outputdir = os.path.join(os.environ["EXP"], expname)
+    # Ensure the output directory is an absolute path. Orbax requires
+    # absolute checkpoint paths, otherwise it raises a ValueError.
+    outputdir = os.path.abspath(os.path.join(os.environ["EXP"], expname))
     variant.outputdir = outputdir
-    if not os.path.exists(outputdir):
-        os.makedirs(outputdir)
+    # Use exist_ok to avoid races if another process created the dir.
+    os.makedirs(outputdir, exist_ok=True)
     print("writing to output dir", outputdir)
 
     group_name = variant.prefix + "_" + variant.launch_group_id
@@ -198,13 +200,16 @@ def main(variant):
 
     agent = PixelSACLearner(variant.seed, sample_obs, sample_action, **kwargs)  # 初始化 actor/critic 网络
 
-    # variant may be a Namespace/dict-like that doesn't always contain
-    # `restore_path` (depends on how parse_training_args populates defaults).
-    # Use getattr with a default to avoid AttributeError when the CLI
-    # doesn't provide this option.
-    if getattr(variant, "restore_path", "") != "":
-        logging.info("restoring from %s", variant.restore_path)
-        agent.restore_checkpoint(variant.restore_path)
+    # # variant may be a Namespace/dict-like that doesn't always contain
+    # # `restore_path` (depends on how parse_training_args populates defaults).
+    # # Use getattr with a default to avoid AttributeError when the CLI
+    # # doesn't provide this option.
+    # if getattr(variant, "restore_path", "") != "":
+    #     logging.info("restoring from %s", variant.restore_path)
+    #     agent.restore_checkpoint(variant.restore_path)
+
+    if variant.load_checkpoint_path:
+        agent.restore_checkpoint(variant.load_checkpoint_path)
 
     online_buffer_size = 2 * variant.max_steps // variant.multi_grad_step
     online_replay_buffer = ReplayBuffer(
@@ -225,4 +230,5 @@ def main(variant):
         shard_fn=shard_fn,
         agent_dp=agent_dp,
         robot_config=robot_config,
+        start_step=variant.start_step,
     )

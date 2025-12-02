@@ -50,7 +50,12 @@ class Agent(object):
         return None
 
     def save_checkpoint(self, dir, step, keep_every_n_steps):
-        checkpoints.save_checkpoint(dir, self._save_dict, step, prefix='checkpoint', overwrite=False, keep_every_n_steps=keep_every_n_steps)
+        # Ensure the checkpoint directory is absolute; Orbax requires an
+        # absolute path and will raise otherwise. Also create the
+        # directory if it doesn't exist to avoid races.
+        ckpt_dir = os.path.abspath(dir)
+        os.makedirs(ckpt_dir, exist_ok=True)
+        checkpoints.save_checkpoint(ckpt_dir, self._save_dict, step, prefix='checkpoint', overwrite=False, keep_every_n_steps=keep_every_n_steps)
 
     def restore_checkpoint(self, dir):
         raise NotImplementedError
