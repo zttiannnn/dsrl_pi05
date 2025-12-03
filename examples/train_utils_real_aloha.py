@@ -139,6 +139,28 @@ def add_online_data_to_buffer(variant, traj, online_replay_buffer):
     online_replay_buffer.increment_traj_counter()
 
 
+def _apply_reward_with_backtrack(chunk_rewards, chunk_index, reward_value, backtrack_steps):
+    """Apply a reward to the current chunk and backtrack to previous chunks.
+    
+    Args:
+        chunk_rewards: List of rewards for each action chunk (modified in-place)
+        chunk_index: Current action chunk index where user provided feedback
+        reward_value: Reward value to assign (e.g., 0 for success, -1 for failure)
+        backtrack_steps: Number of previous chunks to also assign this reward
+    
+    Formula: For user input at chunk index i, set Reward_k = reward_value for k in [i-N, i]
+    """
+    # Calculate the start index with bounds checking
+    start_idx = max(0, chunk_index - backtrack_steps)
+    
+    # Apply reward to all chunks in [start_idx, chunk_index]
+    for k in range(start_idx, chunk_index + 1):
+        if k < len(chunk_rewards):
+            chunk_rewards[k] = reward_value
+    
+    return chunk_rewards
+
+
 def collect_traj(
     variant,
     agent,      # PixelSACLearner：提供探索噪声
@@ -154,13 +176,22 @@ def collect_traj(
     采集策略：
       - 每 query_freq 步重新查询 pi0 策略（得到 chunk_size 个动作）
       - 对 pi0 输出叠加 SAC 探索噪声（agent.sample_actions）
-      - 执行动作并记录观测、奖励（基于最终成功标签）
+      - 执行动作并记录观测、奖励
+    
+    Human-in-the-loop Sub-task Reward Mechanism:
+      - Press '1' during execution: Mark current sub-task as SUCCESS (reward=0)
+        with backtracking to previous N chunks (configurable via --reward_backtrack_steps)
+      - Press '0' during execution: Mark current sub-task as FAILURE (reward=-1)
+        with backtracking to previous N chunks
+      - Press 'q': Immediately stop episode and prompt for final episode-level score
+        (legacy behavior preserved)
+      - Sub-task scoring does NOT terminate the episode; robot continues moving
     
     返回：
       {
         "observations": List[obs_dict],  # 每步观测（pixels + state）
         "actions": List[action],         # RL agent 动作（query_freq 级别）
-        "rewards": np.ndarray,           # 奖励信号（稀疏：成功 0，失败 -1）
+        "rewards": np.ndarray,           # 奖励信号（dense: per-chunk rewards with backtracking）
         "masks": np.ndarray,             # episode 终止标记
         "is_success": bool,              # 人工标注的成功标志
         "env_steps": int                 # 低级控制步数
@@ -170,6 +201,9 @@ def collect_traj(
     instruction = variant.instruction     # 任务提示词
     max_timesteps = robot_config["max_timesteps"]  # 单轨迹最大步数
     agent._rng, rng = jax.random.split(agent._rng)  # JAX 随机数生成器
+    
+    # Reward backtracking configuration
+    backtrack_steps = getattr(variant, "reward_backtrack_steps", 2)
 
     try:
         env.reset(home_position=np.array([0,0,0,0,0,0,0]))
@@ -184,20 +218,54 @@ def collect_traj(
     last_step_time = time.time()
     old_settings = termios.tcgetattr(sys.stdin)
 
-    rewards = []
+    # Initialize chunk-level reward tracking
+    # chunk_rewards stores reward for each action chunk; None means no user feedback yet
+    chunk_rewards = []  # Will be populated as chunks are executed
     action_list = []
     obs_list = []
     image_list = []
     is_success = False
+    early_termination = False  # Track if 'q' was pressed
+    
+    # Track sub-task scoring statistics
+    subtask_success_count = 0
+    subtask_failure_count = 0
+    current_chunk_index = -1  # Will be incremented when new chunk starts
 
     try:
         tty.setcbreak(sys.stdin.fileno())
         for t in tqdm(range(max_timesteps)):
+            # Non-blocking key listener for real-time sub-task scoring
             if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
                 char_input = sys.stdin.read(1)
+                
                 if char_input.lower() == "q":
+                    # Legacy behavior: 'q' stops the episode immediately
                     print("'q' pressed, stopping loop.")
+                    early_termination = True
                     break
+                
+                elif char_input == "1":
+                    # Sub-task SUCCESS: Apply reward=0 with backtracking
+                    # (robot continues moving - does NOT break the loop)
+                    if current_chunk_index >= 0:
+                        _apply_reward_with_backtrack(
+                            chunk_rewards, current_chunk_index, 0.0, backtrack_steps
+                        )
+                        subtask_success_count += 1
+                        print(f"\n[Chunk {current_chunk_index}] Sub-task marked SUCCESS "
+                              f"(backtracked {min(current_chunk_index, backtrack_steps)} chunks)")
+                
+                elif char_input == "0":
+                    # Sub-task FAILURE: Apply reward=-1 with backtracking
+                    # (robot continues moving - does NOT break the loop)
+                    if current_chunk_index >= 0:
+                        _apply_reward_with_backtrack(
+                            chunk_rewards, current_chunk_index, -1.0, backtrack_steps
+                        )
+                        subtask_failure_count += 1
+                        print(f"\n[Chunk {current_chunk_index}] Sub-task marked FAILURE "
+                              f"(backtracked {min(current_chunk_index, backtrack_steps)} chunks)")
 
             try:
                 _env_obs = env.get_observation()
@@ -214,6 +282,12 @@ def collect_traj(
             request_data = get_pi0_input(curr_obs, robot_config, instruction)
 
             if t % query_frequency == 0:
+                # New action chunk starts
+                current_chunk_index += 1
+                
+                # Initialize reward for this chunk as None (no user feedback yet)
+                chunk_rewards.append(None)
+                
                 rng, key = jax.random.split(rng)
                 img_all = process_images(variant, curr_obs, robot_config)
                 img_rep_pi0, _ = agent_dp.get_prefix_rep(request_data)
@@ -248,19 +322,6 @@ def collect_traj(
                 obs_list.append(obs_dict)
                 action = agent_dp.infer(request_data, noise=np.asarray(noise))["actions"]
 
-            # action_t = action[t % query_frequency]
-
-            # # 对于 AgileX 机械臂，策略输出通常是原始的电机脉冲数值（raw counts），
-            # # 因此不能进行 [-1, 1] 的截断，也不能简单地二值化夹爪（除非策略输出就是二值的）。
-            # # 我们直接使用策略输出的动作。
-            # # for idx in robot_config["gripper_indices"]:
-            # #     if action_t[idx].item() > 0.5:
-            # #         action_t[idx] = 1.0
-            # #     else:
-            # #         action_t[idx] = 0.0
-
-            # # action_t = np.clip(action_t, -1, 1)
-            
             action_t = action[t % query_frequency]
 
             try:
@@ -280,6 +341,13 @@ def collect_traj(
             else:
                 last_step_time = now
 
+        # Print sub-task scoring summary
+        print(f"\n=== Sub-task Scoring Summary ===")
+        print(f"Success sub-tasks scored: {subtask_success_count}")
+        print(f"Failure sub-tasks scored: {subtask_failure_count}")
+        print(f"Total chunks: {len(chunk_rewards)}")
+        
+        # Episode-level final scoring (legacy behavior preserved)
         print("Trial finished. Mark as (1) Success or (0) Failure:")
         while True:
             if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
@@ -320,19 +388,44 @@ def collect_traj(
 
     finally:
         query_steps = len(action_list)
+        
         if query_steps == 0:
             rewards = np.array([])
             masks = np.array([])
-        elif is_success:
-            rewards = np.concatenate([-np.ones(query_steps - 1), [0]])
-            masks = np.concatenate([np.ones(query_steps - 1), [0]])
         else:
-            rewards = -np.ones(query_steps)
-            masks = np.ones(query_steps)
-
+            # Build final rewards array by combining:
+            # 1. User-provided sub-task rewards (with backtracking already applied)
+            # 2. Default rewards for chunks without explicit user feedback
+            rewards = np.zeros(query_steps)
+            
+            for k in range(query_steps):
+                if k < len(chunk_rewards) and chunk_rewards[k] is not None:
+                    # Use user-provided sub-task reward
+                    rewards[k] = chunk_rewards[k]
+                else:
+                    # No explicit user feedback for this chunk:
+                    # Use episode-level outcome as fallback
+                    if is_success:
+                        rewards[k] = -1.0 if k < query_steps - 1 else 0.0
+                    else:
+                        rewards[k] = -1.0
+            
+            # Masks: 1 for non-terminal, 0 for terminal
+            if is_success:
+                masks = np.concatenate([np.ones(query_steps - 1), [0]])
+            else:
+                masks = np.ones(query_steps)
+        
+        # Log to wandb
         if wandb_logger is not None:
             wandb_logger.log({"is_success": int(is_success)}, step=i)
             wandb_logger.log({"total_num_traj": traj_id}, step=i)
+            wandb_logger.log({"subtask_success_count": subtask_success_count}, step=i)
+            wandb_logger.log({"subtask_failure_count": subtask_failure_count}, step=i)
+            # Log reward statistics
+            if len(rewards) > 0:
+                wandb_logger.log({"mean_chunk_reward": float(np.mean(rewards))}, step=i)
+                wandb_logger.log({"num_chunks_with_feedback": sum(1 for r in chunk_rewards if r is not None)}, step=i)
 
         video_path = os.path.join(variant.outputdir, f"video_high_{traj_id}.mp4")
         video = np.stack(image_list)

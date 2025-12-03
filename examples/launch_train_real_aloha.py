@@ -138,6 +138,13 @@ if __name__ == "__main__":
     )
     parser.add_argument("--load_checkpoint_path",default="", help="Path to checkpoint to resume training from.", type=str)
     parser.add_argument("--start_step", default=0, help="Step to start training from.", type=int)
+    parser.add_argument(
+        "--reward_backtrack_steps",
+        default=2,
+        type=int,
+        help="Number of previous action chunks to backtrack when assigning sub-task rewards. "
+             "When user scores a sub-task at chunk i, reward is assigned to chunks [i-N, i].",
+    )
 
     train_args_dict = dict(
         actor_lr=1e-4,
