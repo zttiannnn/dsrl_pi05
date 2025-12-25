@@ -175,10 +175,15 @@ def inference_worker(
     sample_obs_shape: dict,
     sample_action_shape: tuple,
     action_horizon: int,
+    guidance_sigma: float = 0.2,
 ):
     """
     推理子进程：加载 pi05 policy 和 RL agent，持续从 in_q 获取观测数据并推理。
     所有推理都在子进程中完成，主进程完全不阻塞。
+    
+    RTC (Real-Time Action Chunking) 支持:
+    - 接收 constraint_actions (前一个 chunk 的未执行尾部) 用于 inpainting
+    - 使用 guidance_sigma (Smooth-as-Butter 参数) 进行更紧密的引导
     """
     # 在子进程中导入和初始化，避免 CUDA context 冲突
     import os
@@ -224,9 +229,10 @@ def inference_worker(
             del rl_agent
             break
         
-        # item = (idx, request_data, img_all, qpos_base)
+        # item = (idx, request_data, img_all, qpos_base, constraint_actions)
         # qpos_base = (joint_position, gripper_position) 不含 img_rep
-        idx, request_data, img_all, qpos_base = item
+        # constraint_actions = 前一个 chunk 的未执行尾部 (用于 RTC inpainting)
+        idx, request_data, img_all, qpos_base, constraint_actions = item
         
         total_start = time.time()
         
@@ -258,13 +264,19 @@ def inference_worker(
         noise_repeat = np.repeat(actions_residual[-1:, :], action_horizon - actions_residual.shape[0], axis=0)
         noise = jnp.concatenate([actions_residual, noise_repeat], axis=0)[None]
         
-        # 4. pi05 推理
+        # 4. pi05 推理 (with RTC constraints)
         t0 = time.time()
-        result = agent_dp.infer(request_data, noise=np.asarray(noise))
+        result = agent_dp.infer(
+            request_data,
+            noise=np.asarray(noise),
+            constraint_actions=constraint_actions,  # RTC: inpainting constraint
+            guidance_sigma=guidance_sigma,  # Smooth-as-Butter: tighter guidance
+        )
         pi05_time = time.time() - t0
         
         total_time = time.time() - total_start
-        logging.info(f"Inference worker step {idx}: prefix={prefix_time:.3f}s, RL={rl_time:.3f}s, pi05={pi05_time:.3f}s, total={total_time:.3f}s")
+        constraint_len = 0 if constraint_actions is None else len(constraint_actions)
+        logging.info(f"Inference worker step {idx}: prefix={prefix_time:.3f}s, RL={rl_time:.3f}s, pi05={pi05_time:.3f}s, total={total_time:.3f}s, constraint_len={constraint_len}")
         
         out_q.put((idx, result["actions"], actions_residual))
 
@@ -277,6 +289,7 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
     action_steps = getattr(variant, "action_steps", 15)
     instruction = variant.instruction
     max_timesteps = robot_config["max_timesteps"]
+    use_rtc = getattr(variant, "use_rtc", True)  # RTC enabled by default
     
     print("Resetting environment...")
     try:
@@ -298,7 +311,13 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
     first_inference = True
     last_action_t = None  # 保存上一个执行的动作
     
+    # RTC (Real-Time Action Chunking) state
+    last_full_chunk = None  # 完整的上一个 action chunk (用于计算 constraint)
+    last_request_step = 0   # 上一次发送推理请求时的步数 (用于计算 steps_consumed)
+    current_step = 0        # 当前执行的总步数
+    
     print("Starting evaluation loop. Press 'q' to stop.")
+    print(f"RTC mode: {'enabled' if use_rtc else 'disabled'}")
     try:
         tty.setcbreak(sys.stdin.fileno())
         for t in tqdm(range(max_timesteps)):
@@ -329,7 +348,13 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                 # 保存 RL 动作用于后续分析
                 action_list.append(actions_residual)
                 
-                # 平滑衔接
+                # RTC: 保存完整的新 chunk 用于下一次计算 constraint
+                new_actions = np.asarray(new_actions, dtype=float)
+                if new_actions.ndim == 1:
+                    new_actions = new_actions[None, :]
+                last_full_chunk = new_actions.copy()
+                
+                # 获取旧动作用于可选的后处理
                 old_actions = list(action_queue)
                 action_queue.clear()
                 
@@ -340,9 +365,7 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                 
                 if horizon_smooth != "none" and len(new_actions) > 0:
                     try:
-                        arr = np.asarray(new_actions, dtype=float)
-                        if arr.ndim == 1:
-                            arr = arr[None, :]
+                        arr = new_actions
                         H, D = arr.shape
                         # 分离 body (关节) 和 gripper
                         if D >= 2:
@@ -357,7 +380,7 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                     except Exception as e:
                         logging.warning(f"Horizon smoothing failed: {e}")
                 
-                # QP 优化（最小化加速度/二阶差分）
+                # QP 优化（最小化加速度/二阶差分）- 可选的安全过滤器
                 qp_lambda_acc = getattr(variant, "qp_lambda_acc", 0.0)
                 qp_velocity_limit = getattr(variant, "qp_velocity_limit", 0.0)
                 
@@ -369,8 +392,6 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                             anchor = np.asarray(old_actions[0], dtype=float)
                         
                         arr = np.asarray(new_actions, dtype=float)
-                        if arr.ndim == 1:
-                            arr = arr[None, :]
                         H, D = arr.shape
                         # 分离 body (关节) 和 gripper
                         if D >= 2:
@@ -385,11 +406,17 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                     except Exception as e:
                         logging.warning(f"QP optimization failed: {e}")
                 
-                if len(old_actions) == 0:
+                # RTC: 不再需要 cubic_transition，因为 RTC inpainting 确保新 chunk 与旧 chunk 尾部对齐
+                if use_rtc:
+                    # RTC 模式：直接追加新动作（新 chunk 开头已与旧 chunk 尾部对齐）
                     action_queue.extend(new_actions)
                 else:
-                    smoothed_actions = cubic_transition(old_actions, new_actions)
-                    action_queue.extend(smoothed_actions)
+                    # 非 RTC 模式：使用 cubic_transition 进行后处理平滑
+                    if len(old_actions) == 0:
+                        action_queue.extend(new_actions)
+                    else:
+                        smoothed_actions = cubic_transition(old_actions, new_actions)
+                        action_queue.extend(smoothed_actions)
                 
                 waiting_for_infer = False
             except:
@@ -408,9 +435,24 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                     [curr_obs["joint_position"], curr_obs["gripper_position"]]
                 )
                 
+                # RTC: 计算 constraint_actions (前一个 chunk 的未执行尾部)
+                constraint_actions = None
+                if use_rtc and last_full_chunk is not None:
+                    # 计算自上次发送请求以来消耗的步数
+                    steps_consumed = current_step - last_request_step
+                    if steps_consumed < len(last_full_chunk):
+                        # 提取未执行的尾部: A_{t-1}[d:]
+                        constraint_actions = last_full_chunk[steps_consumed:]
+                        logging.debug(f"RTC constraint: steps_consumed={steps_consumed}, constraint_len={len(constraint_actions)}")
+                    else:
+                        logging.debug(f"RTC: all actions consumed (steps_consumed={steps_consumed} >= chunk_len={len(last_full_chunk)})")
+                
+                # 记录本次请求的步数
+                last_request_step = current_step
+                
                 # 将推理请求发送到子进程（非阻塞）
                 try:
-                    in_q.put_nowait((sent_idx_ref[0], request_data, img_all, qpos_base))
+                    in_q.put_nowait((sent_idx_ref[0], request_data, img_all, qpos_base, constraint_actions))
                     sent_idx_ref[0] += 1
                     waiting_for_infer = True
                     action_step_counter = 0
@@ -421,6 +463,7 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
             if len(action_queue) > 0:
                 action_t = action_queue.popleft()
                 action_step_counter += 1
+                current_step += 1  # RTC: 跟踪总执行步数
                 last_action_t = action_t  # 保存当前动作
             else:
                 # 队列为空时，复用上一个动作（保持机器人运动）
@@ -511,8 +554,10 @@ def main(variant):
     default_prompt = variant.instruction
     rl_restore_path = getattr(variant, "restore_path", "")
     action_horizon = getattr(variant, "action_horizon", 50)
+    guidance_sigma = getattr(variant, "guidance_sigma", 0.2)  # Smooth-as-Butter parameter
     
     logging.info("Policy checkpoint: %s, config: %s", checkpoint, cfg_name)
+    logging.info("RTC enabled: %s, guidance_sigma: %s", getattr(variant, "use_rtc", True), guidance_sigma)
     
     # 2. 准备 RL agent 的 observation/action space 信息（用于在子进程中重建）
     dummy_env = DummyEnv(variant)
@@ -541,6 +586,7 @@ def main(variant):
             rl_restore_path, kwargs, variant.seed,
             sample_obs_shape, sample_action_shape,
             action_horizon,
+            guidance_sigma,  # Smooth-as-Butter parameter
         )
     )
     proc.daemon = False
@@ -644,6 +690,11 @@ if __name__ == "__main__":
     # QP-style optimizer options
     parser.add_argument("--qp_lambda_acc", type=float, default=0.0, help="二阶差分加速惩罚系数（>=0），qp优化时使用。0 表示禁用")
     parser.add_argument("--qp_velocity_limit", type=float, default=0.0, help="可选的每步最大速度（动作单位/step），>0 则启用速度束缚")
+    
+    # RTC (Real-Time Action Chunking) with Smooth-as-Butter options
+    parser.add_argument("--use_rtc", action="store_true", default=True, help="启用 RTC (Real-Time Action Chunking) inpainting 模式")
+    parser.add_argument("--no_rtc", action="store_false", dest="use_rtc", help="禁用 RTC，使用传统的 cubic_transition 后处理平滑")
+    parser.add_argument("--guidance_sigma", type=float, default=0.2, help="Smooth-as-Butter 参数：较小的值 (如 0.2) 提供更紧密的引导约束")
     
     # Specific for evaluation
     parser.add_argument("--restore_path", default="", help="Path to trained RL agent checkpoint")

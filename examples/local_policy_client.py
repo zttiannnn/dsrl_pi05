@@ -98,12 +98,23 @@ def _policy_worker(in_q: mp.Queue, out_q: mp.Queue, config_name: str, checkpoint
         try:
             if method == "infer":
                 # 推理请求：返回动作序列 (通常为 [chunk_size, action_dim])
-                # payload 可能包含 obs 和 noise（SAC 探索噪声）
+                # payload 可能包含:
+                #   - obs: 观测数据
+                #   - noise: SAC 探索噪声 (DSRL)
+                #   - constraint_actions: RTC inpainting 约束 (前一个 chunk 的未执行尾部)
+                #   - start_timestep: inpainting 开始的 timestep
+                #   - guidance_sigma: Smooth-as-Butter 参数 (默认 0.2)
                 obs = payload.get("obs", payload)
+                infer_kwargs = {}
                 if "noise" in payload:
-                    res = policy.infer(obs, noise=payload["noise"])  # 带噪声扩散采样
-                else:
-                    res = policy.infer(obs)  # 纯策略输出
+                    infer_kwargs["noise"] = payload["noise"]
+                if "constraint_actions" in payload:
+                    infer_kwargs["constraint_actions"] = payload["constraint_actions"]
+                if "start_timestep" in payload:
+                    infer_kwargs["start_timestep"] = payload["start_timestep"]
+                if "guidance_sigma" in payload:
+                    infer_kwargs["guidance_sigma"] = payload["guidance_sigma"]
+                res = policy.infer(obs, **infer_kwargs)
                 out_q.put((req_id, {"result": res}))
             elif method == "get_prefix_rep":
                 # 获取视觉特征：用于构造 RL agent 的 state（joint + image embedding）
@@ -172,10 +183,35 @@ class LocalPolicyClient:
                 logging.warning("Received out-of-order response %s (expected %s)", rid, req_id)
             return resp
 
-    def infer(self, obs: Dict, noise: Optional[np.ndarray] = None) -> Dict:
+    def infer(
+        self,
+        obs: Dict,
+        noise: Optional[np.ndarray] = None,
+        constraint_actions: Optional[np.ndarray] = None,
+        start_timestep: Optional[int] = None,
+        guidance_sigma: float = 0.2,
+    ) -> Dict:
+        """Perform policy inference with optional RTC (Real-Time Action Chunking) constraints.
+        
+        Args:
+            obs: Observation dictionary.
+            noise: Optional noise array from RL agent (DSRL).
+            constraint_actions: Tail of the previous action chunk for RTC inpainting.
+                               Shape: (H-d, action_dim) where d = steps consumed.
+            start_timestep: Optional timestep to start inpainting from.
+            guidance_sigma: Smooth-as-Butter parameter for tighter guidance (default 0.2).
+        
+        Returns:
+            Inference result dictionary containing 'actions'.
+        """
         payload = {"obs": obs}
         if noise is not None:
             payload["noise"] = noise
+        if constraint_actions is not None:
+            payload["constraint_actions"] = constraint_actions
+        if start_timestep is not None:
+            payload["start_timestep"] = start_timestep
+        payload["guidance_sigma"] = guidance_sigma
         resp = self._rpc("infer", payload)
         if "error" in resp:
             raise RuntimeError(resp["error"])
