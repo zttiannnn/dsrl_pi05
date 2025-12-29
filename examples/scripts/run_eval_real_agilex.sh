@@ -32,4 +32,5 @@ python3 -m examples.eval_real_agilex \
 --agilex_port can_right \
 --agilex_cameras_inline "${camera_spec}" \
 --restore_path "${RESTORE_PATH}" \
---eval_episodes 10
+--eval_episodes 10 \
+--no_rtc

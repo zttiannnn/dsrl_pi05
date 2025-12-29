@@ -28,6 +28,7 @@ from jaxrl2.utils.wandb_logger import create_exp_name
 from examples.agilex_env_wrapper import AgileXFollowerEnv
 from examples.train_utils_real_aloha import get_pi0_input, process_images, _extract_observation
 from examples.train_real_aloha import DummyEnv, shard_batch
+from examples.action_chunk_recorder import ActionChunkRecorder
 
 def _apply_transition(old_actions, new_actions, h_fn):
     """
@@ -290,6 +291,7 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
     instruction = variant.instruction
     max_timesteps = robot_config["max_timesteps"]
     use_rtc = getattr(variant, "use_rtc", True)  # RTC enabled by default
+    enable_recording = getattr(variant, "enable_action_recording", False)  # 启用记录
     
     print("Resetting environment...")
     try:
@@ -312,9 +314,20 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
     last_action_t = None  # 保存上一个执行的动作
     
     # RTC (Real-Time Action Chunking) state
-    last_full_chunk = None  # 完整的上一个 action chunk (用于计算 constraint)
-    last_request_step = 0   # 上一次发送推理请求时的步数 (用于计算 steps_consumed)
-    current_step = 0        # 当前执行的总步数
+    # RTC 核心思想：生成新 chunk 时，约束其开头与旧 chunk 的未执行尾部对齐
+    # 这样新旧 chunk 衔接处天然平滑，无需后处理
+    last_full_chunk = None       # 完整的上一个 action chunk
+    last_chunk_start_step = 0    # 上一个 chunk 开始执行时的全局步数
+    pending_request_step = 0     # 发送推理请求时的全局步数 (用于计算延迟)
+    pending_constraint_len = 0   # 发送的约束长度 (用于对齐新 chunk)
+    current_step = 0             # 当前全局执行步数
+    
+    # 初始化动作记录器
+    recorder = None
+    if enable_recording:
+        mode = "rtc" if use_rtc else "cubic"
+        recorder = ActionChunkRecorder(variant.outputdir, mode=mode)
+        print(f"✓ Action recording enabled (mode: {mode})")
     
     print("Starting evaluation loop. Press 'q' to stop.")
     print(f"RTC mode: {'enabled' if use_rtc else 'disabled'}")
@@ -353,6 +366,7 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                 if new_actions.ndim == 1:
                     new_actions = new_actions[None, :]
                 last_full_chunk = new_actions.copy()
+                last_chunk_start_step = current_step  # 记录新 chunk 开始执行的步数
                 
                 # 获取旧动作用于可选的后处理
                 old_actions = list(action_queue)
@@ -406,17 +420,61 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                     except Exception as e:
                         logging.warning(f"QP optimization failed: {e}")
                 
-                # RTC: 不再需要 cubic_transition，因为 RTC inpainting 确保新 chunk 与旧 chunk 尾部对齐
+                # 动作衔接 + 记录
                 if use_rtc:
-                    # RTC 模式：直接追加新动作（新 chunk 开头已与旧 chunk 尾部对齐）
-                    action_queue.extend(new_actions)
+                    # ═══════════════════════════════════════════
+                    #           RTC 模式
+                    # ═══════════════════════════════════════════
+                    # 计算推理延迟导致的额外消耗
+                    inference_latency_steps = current_step - pending_request_step
+                    # 新 chunk 的有效起始位置 = 约束长度 - 剩余约束长度
+                    # 剩余约束 = constraint_len - latency_steps (如果 latency < constraint_len)
+                    rtc_skip = min(inference_latency_steps, pending_constraint_len)
+                    
+                    if rtc_skip > 0 and rtc_skip < len(new_actions):
+                        # 跳过已经被约束覆盖的部分（这些动作与旧 chunk 尾部重叠）
+                        actions_to_add = new_actions[rtc_skip:]
+                        logging.info(f"RTC: skip {rtc_skip} steps (latency={inference_latency_steps}, constraint_len={pending_constraint_len})")
+                    else:
+                        actions_to_add = new_actions
+                        logging.info(f"RTC: no skip (latency={inference_latency_steps}, constraint_len={pending_constraint_len})")
+                    
+                    # 记录 RTC 衔接数据
+                    if recorder is not None and last_full_chunk is not None:
+                        recorder.record_rtc_transition(
+                            global_step=current_step,
+                            old_chunk=last_full_chunk,
+                            new_chunk=new_actions,
+                            rtc_skip=rtc_skip,
+                            time_offset=pending_request_step,
+                            inference_latency=inference_latency_steps,
+                            constraint_len=pending_constraint_len,
+                        )
+                    
+                    action_queue.extend(actions_to_add)
                 else:
-                    # 非 RTC 模式：使用 cubic_transition 进行后处理平滑
+                    # ═══════════════════════════════════════════
+                    #        Cubic Transition 模式
+                    # ═══════════════════════════════════════════
                     if len(old_actions) == 0:
                         action_queue.extend(new_actions)
                     else:
-                        smoothed_actions = cubic_transition(old_actions, new_actions)
-                        action_queue.extend(smoothed_actions)
+                        # 执行 cubic_transition 融合
+                        old_actions_arr = np.array(old_actions)
+                        smoothed_actions_list = cubic_transition(old_actions, new_actions)
+                        smoothed_actions_arr = np.array(smoothed_actions_list)
+                        
+                        # 记录 cubic 衔接数据
+                        if recorder is not None:
+                            recorder.record_cubic_transition(
+                                global_step=current_step,
+                                old_actions=old_actions_arr,
+                                new_actions=new_actions,
+                                blended_actions=smoothed_actions_arr,
+                                time_offset=current_step,
+                            )
+                        
+                        action_queue.extend(smoothed_actions_list)
                 
                 waiting_for_infer = False
             except:
@@ -437,18 +495,20 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
                 
                 # RTC: 计算 constraint_actions (前一个 chunk 的未执行尾部)
                 constraint_actions = None
+                pending_constraint_len = 0
                 if use_rtc and last_full_chunk is not None:
-                    # 计算自上次发送请求以来消耗的步数
-                    steps_consumed = current_step - last_request_step
-                    if steps_consumed < len(last_full_chunk):
-                        # 提取未执行的尾部: A_{t-1}[d:]
-                        constraint_actions = last_full_chunk[steps_consumed:]
-                        logging.debug(f"RTC constraint: steps_consumed={steps_consumed}, constraint_len={len(constraint_actions)}")
+                    # 计算当前 chunk 中已消耗的步数
+                    steps_consumed_in_chunk = current_step - last_chunk_start_step
+                    if steps_consumed_in_chunk < len(last_full_chunk):
+                        # 提取未执行的尾部: A[consumed:]
+                        constraint_actions = last_full_chunk[steps_consumed_in_chunk:]
+                        pending_constraint_len = len(constraint_actions)
+                        logging.debug(f"RTC constraint: consumed={steps_consumed_in_chunk}, constraint_len={pending_constraint_len}")
                     else:
-                        logging.debug(f"RTC: all actions consumed (steps_consumed={steps_consumed} >= chunk_len={len(last_full_chunk)})")
+                        logging.debug(f"RTC: all consumed ({steps_consumed_in_chunk} >= {len(last_full_chunk)})")
                 
-                # 记录本次请求的步数
-                last_request_step = current_step
+                # 记录发送请求时的步数（用于计算推理延迟）
+                pending_request_step = current_step
                 
                 # 将推理请求发送到子进程（非阻塞）
                 try:
@@ -490,6 +550,11 @@ def eval_policy(variant, env, in_q, out_q, robot_config, sent_idx_ref):
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
         print("Evaluation finished.")
+        
+        # 保存动作记录并打印统计
+        if recorder is not None:
+            recorder.save()
+            recorder.print_summary()
 
         if len(image_list) > 0:
             video_path = os.path.join(variant.outputdir, f"eval_video_{time.strftime('%Y%m%d_%H%M%S')}.mp4")
@@ -695,6 +760,9 @@ if __name__ == "__main__":
     parser.add_argument("--use_rtc", action="store_true", default=True, help="启用 RTC (Real-Time Action Chunking) inpainting 模式")
     parser.add_argument("--no_rtc", action="store_false", dest="use_rtc", help="禁用 RTC，使用传统的 cubic_transition 后处理平滑")
     parser.add_argument("--guidance_sigma", type=float, default=0.2, help="Smooth-as-Butter 参数：较小的值 (如 0.2) 提供更紧密的引导约束")
+    
+    # Action chunk visualization and recording
+    parser.add_argument("--enable_action_recording", action="store_true", help="启用动作块记录（评估后可离线可视化）")
     
     # Specific for evaluation
     parser.add_argument("--restore_path", default="", help="Path to trained RL agent checkpoint")
